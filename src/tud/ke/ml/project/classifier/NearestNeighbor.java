@@ -1,7 +1,7 @@
 package tud.ke.ml.project.classifier;
 
-import sun.reflect.generics.reflectiveObjects.NotImplementedException;
 import tud.ke.ml.project.util.Pair;
+import weka.classifiers.lazy.keNN;
 
 import java.io.Serializable;
 import java.util.Comparator;
@@ -20,7 +20,7 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	protected double[] translation;
 	
 	private List<List<Object>> trainData;
-	private int classAttribute;
+	private int numAttributes;
 	
 	// TODO: add missing matrikel numbers
 	@Override
@@ -31,6 +31,7 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	@Override
 	protected void learnModel(List<List<Object>> data) {
 		this.trainData = data;
+		this.numAttributes = data.get(0).size();
 	}
 	
 	@Override
@@ -43,7 +44,10 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	
 	@Override
 	protected Map<Object, Double> getWeightedVotes(List<Pair<List<Object>, Double>> subset) {
-		throw new NotImplementedException();
+		return subset.stream()
+				.map(entry -> new Pair<>(entry.getA().get(this.getClassAttribute()), 1 / entry.getB()))
+				.collect(Collectors.groupingBy(Pair::getA, Collectors.summingDouble(Pair::getB)))
+				.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, value -> value.getValue()));
 	}
 	
 	@Override
@@ -53,41 +57,93 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	
 	@Override
 	protected Object vote(List<Pair<List<Object>, Double>> subset) {
-		if (this.isInverseWeighting()) {
-			return this.getWinner(this.getWeightedVotes(subset));
-		}
-		return this.getWinner(this.getUnweightedVotes(subset));
+		return this.isInverseWeighting() ? this.getWinner(this.getWeightedVotes(subset)) : this.getWinner(this.getUnweightedVotes(subset));
 	}
 	
 	@Override
 	protected List<Pair<List<Object>, Double>> getNearest(List<Object> data) {
-		List<Pair<List<Object>, Double>> tmp = this.trainData.stream()
-				.map(entry -> new Pair<>(entry, this.determineManhattanDistance(entry, data)))
-				.sorted(Comparator.comparing(Pair::getB))
-				.limit(this.getkNearest())
-				.collect(Collectors.toList());
-		//System.out.println(tmp);
-		return tmp;
+		if (this.isNormalizing()) {
+			this.scaling = this.normalizationScaling()[0];
+			this.translation = this.normalizationScaling()[1];
+		}
+		
+		switch (this.getMetric()) {
+			case keNN.DIST_MANHATTAN:
+				return this.trainData.stream()
+						.map(entry -> new Pair<>(entry, this.determineManhattanDistance(entry, data)))
+						.sorted(Comparator.comparing(Pair::getB))
+						.limit(this.getkNearest())
+						.collect(Collectors.toList());
+			case keNN.DIST_EUCLIDEAN:
+				return this.trainData.stream()
+						.map(entry -> new Pair<>(entry, this.determineEuclideanDistance(entry, data)))
+						.sorted(Comparator.comparing(Pair::getB))
+						.limit(this.getkNearest())
+						.collect(Collectors.toList());
+		}
+		throw new UnknownError("Metric unknown");
 	}
 	
 	@Override
 	protected double determineManhattanDistance(List<Object> instance1, List<Object> instance2) {
 		int distance = 0;
-		for (int i = 0; i < instance1.size(); i++) {
-			if (i != getClassAttribute() && !instance1.get(i).equals(instance2.get(i)))
-				distance++;
+		for (int i = 0; i < this.numAttributes; i++) {
+			if (i == this.getClassAttribute()) continue;
+			Object att1 = instance1.get(i);
+			Object att2 = instance2.get(i);
+			if (att1 instanceof String) {
+				if (!att1.equals(att2)) {
+					distance++;
+				}
+			} else if (att1 instanceof Double) {
+				distance += Math.abs((Double) att1 - (Double) att2);
+			}
 		}
 		return distance;
 	}
 	
 	@Override
 	protected double determineEuclideanDistance(List<Object> instance1, List<Object> instance2) {
-		throw new NotImplementedException();
+		int distance = 0;
+		for (int i = 0; i < this.numAttributes; i++) {
+			if (i == this.getClassAttribute()) continue;
+			Object att1 = instance1.get(i);
+			Object att2 = instance2.get(i);
+			if (att1 instanceof String) {
+				if (!att1.equals(att2)) {
+					distance++;
+				}
+			} else if (att1 instanceof Double) {
+				distance += Math.pow(Math.abs((Double) att1 - (Double) att2), 2);
+			}
+		}
+		return Math.sqrt(distance);
 	}
 	
 	@Override
 	protected double[][] normalizationScaling() {
-		throw new NotImplementedException();
+		double[][] boundsPerAttr = new double[this.numAttributes][2];
+		System.out.println(this.numAttributes);
+		for (List<Object> instance : this.trainData) {
+			int i = 0;
+			for (Object attr : instance) {
+				if (attr instanceof Double) {
+					boundsPerAttr[i][0] = (double) attr < boundsPerAttr[i][0] ? (double) attr : boundsPerAttr[i][0];
+					boundsPerAttr[i][1] = (double) attr > boundsPerAttr[i][1] ? (double) attr : boundsPerAttr[i][1];
+				} else {
+					boundsPerAttr[i][0] = -1;
+					boundsPerAttr[i][1] = -2;
+				}
+				i++;
+			}
+		}
+		for (double bound[] : boundsPerAttr) {
+			System.out.println("Lower Bound: " + bound[0]);
+			System.out.println("Upper Bound: " + bound[1]);
+			System.out.println();
+		}
+		
+		return boundsPerAttr;
 	}
 	
 }
