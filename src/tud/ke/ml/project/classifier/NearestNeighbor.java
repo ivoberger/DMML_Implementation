@@ -5,6 +5,7 @@ import weka.classifiers.lazy.keNN;
 
 import java.io.Serializable;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -25,7 +26,7 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	// TODO: add missing matrikel numbers
 	@Override
 	public String getMatrikelNumbers() {
-		return "2857154,FELIX,LUKAS";
+		return "2857154,2750840,2623168";
 	}
 	
 	@Override
@@ -53,7 +54,7 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 		return subset.stream()
 				.map(entry -> new Pair<>(entry.getA().get(this.getClassAttribute()), 1 / (entry.getB() + 0.001)))
 				.collect(Collectors.groupingBy(Pair::getA, Collectors.summingDouble(Pair::getB)))
-				.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, value -> value.getValue()));
+				.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue));
 	}
 	
 	@Override
@@ -74,20 +75,55 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 				results = this.trainData.stream()
 						.map(entry -> new Pair<>(entry, this.determineManhattanDistance(entry, data)))
 						.sorted(Comparator.comparing(Pair::getB))
-						.limit(this.getkNearest())
 						.collect(Collectors.toList());
 				break;
 			case keNN.DIST_EUCLIDEAN:
 				results = this.trainData.stream()
 						.map(entry -> new Pair<>(entry, this.determineEuclideanDistance(entry, data)))
 						.sorted(Comparator.comparing(Pair::getB))
-						.limit(this.getkNearest())
 						.collect(Collectors.toList());
 				break;
 			default:
 				throw new UnknownError("Metric unknown");
 		}
-		return results;
+		return this.filterNeighbours(results);
+	}
+	
+	private List<Pair<List<Object>, Double>> filterNeighbours(List<Pair<List<Object>, Double>> data) {
+		if (this.getkNearest() == 1) return data.stream().limit(this.getkNearest()).collect(Collectors.toList());
+		
+		int equals = 0;
+		boolean foundEquals = false;
+		HashMap<String, Integer> classes = new HashMap<>();
+		for (int i = 0; i < data.size() - 1; i++) {
+			double dist1 = data.get(i).getB().doubleValue();
+			double dist2 = data.get(i + 1).getB().doubleValue();
+			if (foundEquals && dist1 != dist2) {
+				foundEquals = false;
+			}
+			if (!foundEquals && dist1 == dist2) {
+				equals = i;
+				foundEquals = true;
+			}
+			if (i >= this.getkNearest() && !foundEquals) break;
+			
+			String currentClass = data.get(i).getA().toString();
+			classes.put(currentClass, classes.getOrDefault(currentClass, 0) + 1);
+		}
+		if (!foundEquals) return data.stream().limit(this.getkNearest()).collect(Collectors.toList());
+		HashMap<String, Integer> classesOrdered = new HashMap<>();
+		classes.entrySet().stream().sorted(Map.Entry.comparingByValue()).forEachOrdered(x -> classesOrdered.put(x.getKey(), x.getValue()));
+		
+		List<Pair<List<Object>, Double>> result = data.stream().limit(this.getkNearest() - equals).collect(Collectors.toList());
+		for (String key : classesOrdered.keySet()) {
+			for (int i = equals; i < data.size(); i++) {
+				String currentClass = data.get(i).getA().toString();
+				if (currentClass.equals(key) && result.size() <= this.getkNearest()) {
+					result.add(data.get(i));
+				} else break;
+			}
+		}
+		return result;
 	}
 	
 	@Override
