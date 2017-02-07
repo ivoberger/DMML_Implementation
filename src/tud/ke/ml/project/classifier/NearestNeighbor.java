@@ -19,28 +19,28 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	
 	protected double[] scaling;
 	protected double[] translation;
-	
+
 	private List<List<Object>> trainData;
 	private int numAttributes;
-	
+
 	// TODO: add missing matrikel numbers
 	@Override
 	public String getMatrikelNumbers() {
 		return "2857154,FELIX,LUKAS";
 	}
-	
+
 	@Override
 	protected void learnModel(List<List<Object>> data) {
 		this.trainData = data;
 		this.numAttributes = data.get(0).size();
-		
+
 		if (this.isNormalizing()) {
 			double[][] normalization = this.normalizationScaling();
-			this.scaling = normalization[0];
-			this.translation = normalization[1];
+			this.scaling = normalization[0].clone();
+			this.translation = normalization[1].clone();
 		}
 	}
-	
+
 	@Override
 	protected Map<Object, Double> getUnweightedVotes(List<Pair<List<Object>, Double>> subset) {
 		return subset.stream()
@@ -48,7 +48,7 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 				.collect(Collectors.groupingBy(Function.identity(), Collectors.counting()))
 				.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, value -> value.getValue().doubleValue()));
 	}
-	
+
 	@Override
 	protected Map<Object, Double> getWeightedVotes(List<Pair<List<Object>, Double>> subset) {
 		return subset.stream()
@@ -56,78 +56,84 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 				.collect(Collectors.groupingBy(Pair::getA, Collectors.summingDouble(Pair::getB)))
 				.entrySet().stream().collect(Collectors.toMap(Map.Entry::getKey, value -> value.getValue()));
 	}
-	
+
 	@Override
 	protected Object getWinner(Map<Object, Double> votes) {
 		return votes.entrySet().stream().max(Map.Entry.comparingByValue()).get().getKey();
 	}
-	
+
 	@Override
 	protected Object vote(List<Pair<List<Object>, Double>> subset) {
 		return this.isInverseWeighting() ? this.getWinner(this.getWeightedVotes(subset)) : this.getWinner(this.getUnweightedVotes(subset));
 	}
-	
+
 	@Override
 	protected List<Pair<List<Object>, Double>> getNearest(List<Object> data) {
+		if (this.isNormalizing()) {
+			double[][] normalization = this.normalizationScaling();
+			this.scaling = normalization[0].clone();
+			this.translation = normalization[1].clone();
+		}
+
 		switch (this.getMetric()) {
 			case keNN.DIST_MANHATTAN:
-				return this.trainData.stream()
+				List<Pair<List<Object>, Double>> tmp = this.trainData.stream()
 						.map(entry -> new Pair<>(entry, this.determineManhattanDistance(entry, data)))
 						.sorted(Comparator.comparing(Pair::getB))
 						.limit(this.getkNearest())
 						.collect(Collectors.toList());
+				return tmp;
 			case keNN.DIST_EUCLIDEAN:
-				return this.trainData.stream()
+				tmp = this.trainData.stream()
 						.map(entry -> new Pair<>(entry, this.determineEuclideanDistance(entry, data)))
 						.sorted(Comparator.comparing(Pair::getB))
 						.limit(this.getkNearest())
 						.collect(Collectors.toList());
+				return tmp;
 		}
 		throw new UnknownError("Metric unknown");
 	}
-	
+
 	@Override
 	protected double determineManhattanDistance(List<Object> instance1, List<Object> instance2) {
-		List<Object> inst1 = this.isNormalizing() ? this.normalize(instance1) : instance1;
-		List<Object> inst2 = this.isNormalizing() ? this.normalize(instance2) : instance2;
-		
 		int distance = 0;
 		for (int i = 0; i < this.numAttributes; i++) {
 			if (i == this.getClassAttribute()) continue;
-			Object att1 = inst1.get(i);
-			Object att2 = inst2.get(i);
+			Object att1 = instance1.get(i);
+			Object att2 = instance2.get(i);
 			if (att1 instanceof String) {
 				if (!att1.equals(att2)) {
 					distance++;
 				}
 			} else if (att1 instanceof Double) {
-				distance += Math.abs((Double) att1 - (Double) att2);
+				double a1 = this.isNormalizing() ? ((double) att1 + translation[i]) * this.scaling[i] : (double) att1;
+				double a2 = this.isNormalizing() ? ((double) att2 + translation[i]) * this.scaling[i] : (double) att2;
+				distance += Math.abs(a1 - a2);
 			}
 		}
 		return distance;
 	}
-	
+
 	@Override
 	protected double determineEuclideanDistance(List<Object> instance1, List<Object> instance2) {
-		List<Object> inst1 = this.isNormalizing() ? this.normalize(instance1) : instance1;
-		List<Object> inst2 = this.isNormalizing() ? this.normalize(instance2) : instance2;
-		
 		int distance = 0;
 		for (int i = 0; i < this.numAttributes; i++) {
 			if (i == this.getClassAttribute()) continue;
-			Object att1 = inst1.get(i);
-			Object att2 = inst2.get(i);
+			Object att1 = instance1.get(i);
+			Object att2 = instance2.get(i);
 			if (att1 instanceof String) {
 				if (!att1.equals(att2)) {
 					distance++;
 				}
 			} else if (att1 instanceof Double) {
-				distance += Math.pow(Math.abs((Double) att1 - (Double) att2), 2);
+				double a1 = this.isNormalizing() ? ((double) att1 + translation[i]) * this.scaling[i] : (double) att1;
+				double a2 = this.isNormalizing() ? ((double) att2 + translation[i]) * this.scaling[i] : (double) att2;
+				distance += Math.pow(Math.abs(a1 - a2), 2);
 			}
 		}
 		return Math.sqrt(distance);
 	}
-	
+
 	@Override
 	protected double[][] normalizationScaling() {
 		// save minimum and maximum per attribute
@@ -144,31 +150,13 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 		}
 		double[][] normalization = new double[2][this.numAttributes];
 		for (int i = 0; i < this.numAttributes; i++) {
-			double diff = boundsPerAttr[1][i] - boundsPerAttr[0][i] == 0 ? 1 : boundsPerAttr[1][i] - boundsPerAttr[0][i];
-			normalization[0][i] = 1 / diff;
-			normalization[1][i] = -boundsPerAttr[0][i];
-		}
-		return normalization;
-	}
-	
-	private List<Object> normalize(List<Object> instance) {
-		List<Object> copy = new LinkedList<Object>(instance);
-		for (int i = 0; i < this.numAttributes; i++) {
-			if (copy.get(i) instanceof Double) {
-				if ((double) copy.get(i) < 0 || (double) copy.get(i) > 1) {
-					System.out.print("Before: " + copy.get(i));
-					copy.set(i, (double) copy.get(i) * this.scaling[i]);
-					copy.set(i, (double) copy.get(i) + this.translation[i]);
-					System.out.print("  After: " + copy.get(i));
-					System.out.print("  Scaling: " + this.scaling[i]);
-					System.out.println("  Translation: " + this.translation[i]);
-				}
-				if ((double) copy.get(i) < 0 || (double) copy.get(i) > 1) {
-					throw new UnknownError("Normalization screwed");
-				}
+			if (this.trainData.get(0).get(i) instanceof Double) {
+				double diff = boundsPerAttr[1][i] - boundsPerAttr[0][i];
+				normalization[0][i] =  diff == 0 ? Double.MAX_VALUE : 1 / diff;
+				normalization[1][i] = - boundsPerAttr[0][i];
 			}
 		}
-		return copy;
+		return normalization;
 	}
 	
 }
