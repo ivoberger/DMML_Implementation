@@ -5,6 +5,7 @@ import weka.classifiers.lazy.keNN;
 
 import java.io.Serializable;
 import java.util.Comparator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -32,6 +33,12 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	protected void learnModel(List<List<Object>> data) {
 		this.trainData = data;
 		this.numAttributes = data.get(0).size();
+		
+		if (this.isNormalizing()) {
+			double[][] normalization = this.normalizationScaling();
+			this.scaling = normalization[0];
+			this.translation = normalization[1];
+		}
 	}
 	
 	@Override
@@ -62,11 +69,6 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	
 	@Override
 	protected List<Pair<List<Object>, Double>> getNearest(List<Object> data) {
-		if (this.isNormalizing()) {
-			this.scaling = this.normalizationScaling()[0];
-			this.translation = this.normalizationScaling()[1];
-		}
-		
 		switch (this.getMetric()) {
 			case keNN.DIST_MANHATTAN:
 				return this.trainData.stream()
@@ -86,11 +88,14 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	
 	@Override
 	protected double determineManhattanDistance(List<Object> instance1, List<Object> instance2) {
+		List<Object> inst1 = this.isNormalizing() ? this.normalize(instance1) : instance1;
+		List<Object> inst2 = this.isNormalizing() ? this.normalize(instance2) : instance2;
+		
 		int distance = 0;
 		for (int i = 0; i < this.numAttributes; i++) {
 			if (i == this.getClassAttribute()) continue;
-			Object att1 = instance1.get(i);
-			Object att2 = instance2.get(i);
+			Object att1 = inst1.get(i);
+			Object att2 = inst2.get(i);
 			if (att1 instanceof String) {
 				if (!att1.equals(att2)) {
 					distance++;
@@ -104,11 +109,14 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	
 	@Override
 	protected double determineEuclideanDistance(List<Object> instance1, List<Object> instance2) {
+		List<Object> inst1 = this.isNormalizing() ? this.normalize(instance1) : instance1;
+		List<Object> inst2 = this.isNormalizing() ? this.normalize(instance2) : instance2;
+		
 		int distance = 0;
 		for (int i = 0; i < this.numAttributes; i++) {
 			if (i == this.getClassAttribute()) continue;
-			Object att1 = instance1.get(i);
-			Object att2 = instance2.get(i);
+			Object att1 = inst1.get(i);
+			Object att2 = inst2.get(i);
 			if (att1 instanceof String) {
 				if (!att1.equals(att2)) {
 					distance++;
@@ -122,28 +130,45 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 	
 	@Override
 	protected double[][] normalizationScaling() {
-		double[][] boundsPerAttr = new double[this.numAttributes][2];
-		System.out.println(this.numAttributes);
+		// save minimum and maximum per attribute
+		double[][] boundsPerAttr = new double[2][this.numAttributes];
 		for (List<Object> instance : this.trainData) {
 			int i = 0;
 			for (Object attr : instance) {
 				if (attr instanceof Double) {
-					boundsPerAttr[i][0] = (double) attr < boundsPerAttr[i][0] ? (double) attr : boundsPerAttr[i][0];
-					boundsPerAttr[i][1] = (double) attr > boundsPerAttr[i][1] ? (double) attr : boundsPerAttr[i][1];
-				} else {
-					boundsPerAttr[i][0] = -1;
-					boundsPerAttr[i][1] = -2;
+					boundsPerAttr[0][i] = (double) attr < boundsPerAttr[0][i] ? (double) attr : boundsPerAttr[0][i];
+					boundsPerAttr[1][i] = (double) attr > boundsPerAttr[1][i] ? (double) attr : boundsPerAttr[1][i];
 				}
 				i++;
 			}
 		}
-		for (double bound[] : boundsPerAttr) {
-			System.out.println("Lower Bound: " + bound[0]);
-			System.out.println("Upper Bound: " + bound[1]);
-			System.out.println();
+		double[][] normalization = new double[2][this.numAttributes];
+		for (int i = 0; i < this.numAttributes; i++) {
+			double diff = boundsPerAttr[1][i] - boundsPerAttr[0][i] == 0 ? 1 : boundsPerAttr[1][i] - boundsPerAttr[0][i];
+			normalization[0][i] = 1 / diff;
+			normalization[1][i] = -boundsPerAttr[0][i];
 		}
-		
-		return boundsPerAttr;
+		return normalization;
+	}
+	
+	private List<Object> normalize(List<Object> instance) {
+		List<Object> copy = new LinkedList<Object>(instance);
+		for (int i = 0; i < this.numAttributes; i++) {
+			if (copy.get(i) instanceof Double) {
+				if ((double) copy.get(i) < 0 || (double) copy.get(i) > 1) {
+					System.out.print("Before: " + copy.get(i));
+					copy.set(i, (double) copy.get(i) * this.scaling[i]);
+					copy.set(i, (double) copy.get(i) + this.translation[i]);
+					System.out.print("  After: " + copy.get(i));
+					System.out.print("  Scaling: " + this.scaling[i]);
+					System.out.println("  Translation: " + this.translation[i]);
+				}
+				if ((double) copy.get(i) < 0 || (double) copy.get(i) > 1) {
+					throw new UnknownError("Normalization screwed");
+				}
+			}
+		}
+		return copy;
 	}
 	
 }
