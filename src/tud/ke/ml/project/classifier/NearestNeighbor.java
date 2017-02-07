@@ -74,18 +74,19 @@ public class NearestNeighbor extends INearestNeighbor implements Serializable {
 				results = this.trainData.stream()
 						.map(entry -> new Pair<>(entry, this.determineManhattanDistance(entry, data)))
 						.sorted(Comparator.comparing(Pair::getB))
+						.limit(this.getkNearest())
 						.collect(Collectors.toList());
 				break;
 			case keNN.DIST_EUCLIDEAN:
 				results = this.trainData.stream()
 						.map(entry -> new Pair<>(entry, this.determineEuclideanDistance(entry, data)))
 						.sorted(Comparator.comparing(Pair::getB))
+						.limit(this.getkNearest())
 						.collect(Collectors.toList());
 				break;
 			default:
 				throw new UnknownError("Metric unknown");
 		}
-		
 		return results;
 	}
 	
