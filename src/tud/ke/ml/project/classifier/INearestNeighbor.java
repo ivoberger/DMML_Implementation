@@ -170,12 +170,12 @@ public abstract class INearestNeighbor {
 	 * Calculates the nearest neighbors. Must call {@link #determineManhattanDistance(List, List)} or {@link #determineEuclideanDistance(List, List)} according to {@link #getMetric()}
 	 *
 	 * @param testdata the current test instance
-	 * @return a list of {@link #getkNearest()} nearest instances with their according distance
+	 * @return a list of {@link #getkNearest()} nearest trainData with their according distance
 	 */
 	protected abstract List<Pair<List<Object>, Double>> getNearest(List<Object> testdata);
 	
 	/**
-	 * Calculates the Manhattan distance between the two instances
+	 * Calculates the Manhattan distance between the two trainData
 	 *
 	 * @param instance1
 	 * @param instance2
@@ -184,7 +184,7 @@ public abstract class INearestNeighbor {
 	protected abstract double determineManhattanDistance(List<Object> instance1, List<Object> instance2);
 	
 	/**
-	 * Calculates the Euclidean distance between the two instances
+	 * Calculates the Euclidean distance between the two trainData
 	 *
 	 * @param instance1
 	 * @param instance2
